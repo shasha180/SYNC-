@@ -1,0 +1,852 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>POTS Digital Twin Simulator</title>
+<link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=DM+Sans:wght@400;600;700&display=swap" rel="stylesheet"/>
+<style>
+  :root {
+    --bg: #1a0f14;
+    --panel: #231318;
+    --panel2: #2d1a20;
+    --border: #4a2535;
+    --pink: #f472b6;
+    --pink-soft: #fbb6ce;
+    --pink-dim: #9d3f6b;
+    --pink-glow: rgba(244,114,182,0.15);
+    --warn: #fbbf24;
+    --danger: #f87171;
+    --ok: #86efac;
+    --text: #f0d6e0;
+    --muted: #8b5a6e;
+    --font: 'DM Sans', sans-serif;
+    --mono: 'DM Mono', monospace;
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--font);
+    min-height: 100vh;
+  }
+
+  header {
+    padding: 16px 28px;
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    background: var(--panel);
+  }
+
+  .header-left h1 {
+    font-size: 1rem;
+    font-weight: 700;
+    color: var(--pink-soft);
+    letter-spacing: 0.05em;
+  }
+
+  .header-left p {
+    font-size: 0.7rem;
+    color: var(--muted);
+    font-family: var(--mono);
+    letter-spacing: 0.1em;
+    margin-top: 2px;
+  }
+
+  .header-right {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+  }
+
+  .live-dot {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 0.7rem;
+    color: var(--muted);
+    font-family: var(--mono);
+  }
+
+  .dot {
+    width: 7px; height: 7px;
+    border-radius: 50%;
+    background: var(--ok);
+    box-shadow: 0 0 6px var(--ok);
+    animation: blink 1.4s infinite;
+  }
+
+  .dot.paused { background: var(--muted); box-shadow: none; animation: none; }
+
+  @keyframes blink {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.2; }
+  }
+
+  .voice-anim {
+    display: flex;
+    align-items: center;
+    gap: 2px;
+    height: 16px;
+  }
+
+  .vb {
+    width: 3px;
+    background: var(--pink);
+    border-radius: 2px;
+    height: 3px;
+  }
+
+  .vb.active { animation: vwave 0.6s infinite ease-in-out; }
+  .vb:nth-child(2).active { animation-delay: 0.1s; }
+  .vb:nth-child(3).active { animation-delay: 0.2s; }
+  .vb:nth-child(4).active { animation-delay: 0.3s; }
+  .vb:nth-child(5).active { animation-delay: 0.4s; }
+
+  @keyframes vwave {
+    0%, 100% { height: 3px; }
+    50% { height: 14px; }
+  }
+
+  .wrap {
+    max-width: 920px;
+    margin: 0 auto;
+    padding: 22px 20px;
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+  }
+
+  /* ALERT BANNER */
+  .alert-banner {
+    border-radius: 10px;
+    padding: 13px 18px;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    font-size: 0.82rem;
+    font-weight: 600;
+    border: 1px solid transparent;
+    transition: all 0.5s;
+  }
+
+  .alert-banner.stable   { background: rgba(134,239,172,0.07); border-color: rgba(134,239,172,0.25); color: var(--ok); }
+  .alert-banner.mild     { background: rgba(244,114,182,0.08); border-color: rgba(244,114,182,0.3);  color: var(--pink-soft); }
+  .alert-banner.moderate { background: rgba(251,191,36,0.08);  border-color: rgba(251,191,36,0.35);  color: var(--warn); animation: pw 2s infinite; }
+  .alert-banner.severe   { background: rgba(248,113,113,0.1);  border-color: rgba(248,113,113,0.5);  color: var(--danger); animation: pw 0.9s infinite; }
+
+  @keyframes pw { 0%, 100% { opacity: 1; } 50% { opacity: 0.6; } }
+
+  .alert-icon { font-size: 1.1rem; flex-shrink: 0; }
+
+  /* ECG CARD */
+  .ecg-card {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 16px 18px;
+  }
+
+  .ecg-top {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 10px;
+  }
+
+  .ecg-label { font-size: 0.65rem; font-family: var(--mono); color: var(--muted); letter-spacing: 0.15em; }
+
+  .bpm-display {
+    font-size: 1.8rem;
+    font-weight: 700;
+    color: var(--pink);
+    text-shadow: 0 0 18px rgba(244,114,182,0.35);
+    font-family: var(--mono);
+    line-height: 1;
+  }
+
+  .bpm-display span { font-size: 0.75rem; color: var(--muted); margin-left: 3px; font-weight: 400; }
+
+  canvas#ecg { width: 100%; height: 80px; display: block; }
+
+  /* METRICS */
+  .metrics-grid {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 10px;
+  }
+
+  .metric {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 14px;
+    position: relative;
+    overflow: hidden;
+  }
+
+  .metric::before {
+    content: '';
+    position: absolute;
+    bottom: 0; left: 0; right: 0;
+    height: 2px;
+    background: var(--pink-dim);
+    opacity: 0.5;
+    transition: all 0.4s;
+  }
+
+  .metric.ok::before   { background: var(--ok);     opacity: 0.7; }
+  .metric.warn::before { background: var(--warn);   opacity: 0.9; }
+  .metric.danger::before { background: var(--danger); opacity: 1; }
+
+  .metric-name { font-size: 0.58rem; font-family: var(--mono); color: var(--muted); letter-spacing: 0.12em; text-transform: uppercase; margin-bottom: 6px; }
+  .metric-val  { font-size: 1.4rem; font-weight: 700; color: var(--text); line-height: 1; font-family: var(--mono); }
+  .metric-unit { font-size: 0.58rem; color: var(--muted); margin-top: 3px; }
+
+  /* CLASSIFICATION */
+  .classif {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 16px 18px;
+  }
+
+  .card-title {
+    font-size: 0.6rem;
+    font-family: var(--mono);
+    color: var(--muted);
+    letter-spacing: 0.2em;
+    text-transform: uppercase;
+    margin-bottom: 12px;
+    padding-bottom: 8px;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .class-item {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 8px 12px;
+    border-radius: 7px;
+    margin-bottom: 6px;
+    border: 1px solid transparent;
+    font-size: 0.78rem;
+    font-weight: 600;
+    opacity: 0.3;
+    transition: all 0.3s;
+  }
+
+  .class-item:last-child { margin-bottom: 0; }
+  .class-item.active { opacity: 1; }
+
+  .c-stable   { border-color: rgba(134,239,172,0.3); color: var(--ok);        background: rgba(134,239,172,0.06); }
+  .c-mild     { border-color: rgba(244,114,182,0.3); color: var(--pink-soft); background: var(--pink-glow); }
+  .c-moderate { border-color: rgba(251,191,36,0.3);  color: var(--warn);      background: rgba(251,191,36,0.06); }
+  .c-severe   { border-color: rgba(248,113,113,0.4); color: var(--danger);    background: rgba(248,113,113,0.07); }
+
+  /* TWO COL */
+  .two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+
+  .card {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 18px;
+  }
+
+  /* POSTURE */
+  .posture-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
+
+  .p-btn {
+    background: var(--panel2);
+    border: 1px solid var(--border);
+    color: var(--muted);
+    padding: 10px 6px;
+    border-radius: 8px;
+    cursor: pointer;
+    font-family: var(--font);
+    font-size: 0.7rem;
+    font-weight: 600;
+    text-align: center;
+    transition: all 0.2s;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 4px;
+  }
+
+  .p-btn .ei { font-size: 1.2rem; }
+  .p-btn:hover { border-color: var(--pink-dim); color: var(--pink-soft); }
+  .p-btn.active { border-color: var(--pink); background: var(--pink-glow); color: var(--pink-soft); }
+
+  /* INPUTS */
+  .input-group { display: flex; flex-direction: column; gap: 8px; }
+
+  .input-row {
+    display: flex;
+    align-items: center;
+    background: var(--panel2);
+    border: 1px solid var(--border);
+    border-radius: 7px;
+    overflow: hidden;
+  }
+
+  .input-row label {
+    padding: 8px 10px;
+    font-size: 0.63rem;
+    color: var(--muted);
+    font-family: var(--mono);
+    min-width: 115px;
+    border-right: 1px solid var(--border);
+  }
+
+  .input-row input[type=number] {
+    flex: 1;
+    background: transparent;
+    border: none;
+    outline: none;
+    color: var(--pink-soft);
+    font-family: var(--mono);
+    font-size: 0.85rem;
+    padding: 8px 12px;
+    text-align: right;
+  }
+
+  /* SLIDER */
+  .slider-wrap { margin-top: 12px; }
+
+  .slider-top {
+    display: flex;
+    justify-content: space-between;
+    font-size: 0.65rem;
+    color: var(--muted);
+    font-family: var(--mono);
+    margin-bottom: 7px;
+  }
+
+  .slider-top span:last-child { color: var(--pink-soft); }
+
+  input[type=range] {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 100%;
+    height: 4px;
+    background: var(--border);
+    border-radius: 2px;
+    outline: none;
+    cursor: pointer;
+  }
+
+  input[type=range]::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 15px; height: 15px;
+    border-radius: 50%;
+    background: var(--pink);
+    box-shadow: 0 0 7px rgba(244,114,182,0.5);
+    cursor: pointer;
+    transition: transform 0.15s;
+  }
+
+  input[type=range]::-webkit-slider-thumb:hover { transform: scale(1.25); }
+
+  /* BUTTONS */
+  .btn-spike {
+    width: 100%;
+    padding: 12px;
+    background: transparent;
+    border: 1px solid var(--danger);
+    color: var(--danger);
+    font-family: var(--font);
+    font-size: 0.78rem;
+    font-weight: 600;
+    border-radius: 8px;
+    cursor: pointer;
+    transition: all 0.2s;
+    margin-bottom: 8px;
+  }
+
+  .btn-spike:hover { background: rgba(248,113,113,0.1); }
+
+  .btn-row { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+
+  .btn {
+    padding: 10px;
+    background: var(--panel2);
+    border: 1px solid var(--border);
+    color: var(--muted);
+    font-family: var(--font);
+    font-size: 0.72rem;
+    font-weight: 600;
+    border-radius: 7px;
+    cursor: pointer;
+    transition: all 0.2s;
+  }
+
+  .btn:hover { border-color: var(--pink-dim); color: var(--pink-soft); }
+  .btn.on { background: var(--pink-glow); border-color: var(--pink-dim); color: var(--pink-soft); }
+
+  /* VOICE TOGGLE */
+  .voice-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 12px;
+  }
+
+  .voice-label { font-size: 0.75rem; font-weight: 600; }
+
+  .toggle { position: relative; width: 38px; height: 21px; cursor: pointer; }
+  .toggle input { display: none; }
+  .toggle-track { position: absolute; inset: 0; background: var(--border); border-radius: 12px; transition: background 0.2s; }
+  .toggle-thumb { position: absolute; top: 3px; left: 3px; width: 15px; height: 15px; background: #fff; border-radius: 50%; transition: transform 0.2s; }
+  .toggle input:checked ~ .toggle-track { background: var(--pink); }
+  .toggle input:checked ~ .toggle-thumb { transform: translateX(17px); }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="header-left">
+    <h1>🫀 POTS Digital Twin Simulator</h1>
+    <p>AUTONOMIC CARDIOVASCULAR MODEL · v2.1</p>
+  </div>
+  <div class="header-right">
+    <div class="voice-anim" id="voiceAnim">
+      <div class="vb"></div><div class="vb"></div><div class="vb"></div>
+      <div class="vb"></div><div class="vb"></div>
+    </div>
+    <div class="live-dot">
+      <div class="dot" id="liveDot"></div>
+      <span id="clockEl">--:--:--</span>
+    </div>
+  </div>
+</header>
+
+<div class="wrap">
+
+  <!-- ALERT BANNER -->
+  <div class="alert-banner stable" id="alertBanner">
+    <span class="alert-icon">💚</span>
+    <span id="alertText">Stable physiology — all parameters within normal range.</span>
+  </div>
+
+  <!-- ECG -->
+  <div class="ecg-card">
+    <div class="ecg-top">
+      <div class="ecg-label">LEAD II — REAL-TIME ECG SIMULATION</div>
+      <div class="bpm-display" id="bpmDisplay">--<span>BPM</span></div>
+    </div>
+    <canvas id="ecg"></canvas>
+  </div>
+
+  <!-- METRICS (8) -->
+  <div class="metrics-grid">
+    <div class="metric" id="cHR">
+      <div class="metric-name">Heart Rate</div>
+      <div class="metric-val" id="mHR">--</div>
+      <div class="metric-unit">BPM</div>
+    </div>
+    <div class="metric" id="cHRV">
+      <div class="metric-name">HRV Proxy</div>
+      <div class="metric-val" id="mHRV">--</div>
+      <div class="metric-unit">ms</div>
+    </div>
+    <div class="metric" id="cPool">
+      <div class="metric-name">Blood Pooling</div>
+      <div class="metric-val" id="mPool">--</div>
+      <div class="metric-unit">index</div>
+    </div>
+    <div class="metric" id="cStress">
+      <div class="metric-name">Autonomic Stress</div>
+      <div class="metric-val" id="mStress">--</div>
+      <div class="metric-unit">0–1 scale</div>
+    </div>
+    <div class="metric" id="cPOTS">
+      <div class="metric-name">POTS Score</div>
+      <div class="metric-val" id="mPOTS">--</div>
+      <div class="metric-unit">arb. units</div>
+    </div>
+    <div class="metric" id="cSync">
+      <div class="metric-name">Syncope Risk</div>
+      <div class="metric-val" id="mSync">--</div>
+      <div class="metric-unit">%</div>
+    </div>
+    <div class="metric" id="cSpike">
+      <div class="metric-name">Spike Duration</div>
+      <div class="metric-val" id="mSpike">--</div>
+      <div class="metric-unit">seconds</div>
+    </div>
+    <div class="metric" id="cDelta">
+      <div class="metric-name">HR Delta</div>
+      <div class="metric-val" id="mDelta">--</div>
+      <div class="metric-unit">from baseline</div>
+    </div>
+  </div>
+
+  <!-- CLASSIFICATION -->
+  <div class="classif">
+    <div class="card-title">Classification</div>
+    <div class="class-item c-stable" id="clStable">💚  Stable Physiology — parameters within normal range</div>
+    <div class="class-item c-mild" id="clMild">🩷  Mild POTS Response — slight autonomic mismatch detected</div>
+    <div class="class-item c-moderate" id="clModerate">⚠️  Moderate — sustained tachycardia / POTS-like response</div>
+    <div class="class-item c-severe" id="clSevere">🆘  Severe — high syncope risk / prolonged spike</div>
+  </div>
+
+  <!-- CONTROLS -->
+  <div class="two-col">
+
+    <div style="display:flex;flex-direction:column;gap:14px">
+
+      <!-- POSTURE -->
+      <div class="card">
+        <div class="card-title">Posture</div>
+        <div class="posture-grid">
+          <button class="p-btn" data-p="Lying" onclick="setPosture('Lying')"><span class="ei">🛏</span>Lying</button>
+          <button class="p-btn active" data-p="Sitting" onclick="setPosture('Sitting')"><span class="ei">🪑</span>Sitting</button>
+          <button class="p-btn" data-p="Standing" onclick="setPosture('Standing')"><span class="ei">🧍</span>Standing</button>
+          <button class="p-btn" data-p="Walking" onclick="setPosture('Walking')"><span class="ei">🚶</span>Walking</button>
+        </div>
+      </div>
+
+      <!-- MANUAL PARAMS -->
+      <div class="card">
+        <div class="card-title">Manual Parameters</div>
+        <div class="input-group">
+          <div class="input-row">
+            <label>Base HR (BPM)</label>
+            <input type="number" id="baseHR" value="70" min="40" max="120"/>
+          </div>
+          <div class="input-row">
+            <label>Initial Stress</label>
+            <input type="number" id="initStress" value="0.2" min="0" max="1" step="0.05"/>
+          </div>
+          <div class="input-row">
+            <label>Pooling Rate</label>
+            <input type="number" id="poolRate" value="0.12" min="0.01" max="0.3" step="0.01"/>
+          </div>
+        </div>
+        <div class="slider-wrap">
+          <div class="slider-top">
+            <span>Movement Intensity</span>
+            <span id="movVal">0.10</span>
+          </div>
+          <input type="range" id="movSlider" min="0" max="2" step="0.05" value="0.1"
+            oninput="document.getElementById('movVal').textContent = parseFloat(this.value).toFixed(2)"/>
+        </div>
+      </div>
+
+    </div>
+
+    <div style="display:flex;flex-direction:column;gap:14px">
+
+      <!-- EVENTS -->
+      <div class="card">
+        <div class="card-title">Simulation Events</div>
+        <button class="btn-spike" onclick="triggerStand()">⬆ Simulate Stand-Up Event</button>
+        <div class="btn-row">
+          <button class="btn on" id="btnRun" onclick="toggleSim()">⏸ Pause</button>
+          <button class="btn" onclick="resetSim()">↺ Reset</button>
+        </div>
+      </div>
+
+      <!-- VOICE -->
+      <div class="card">
+        <div class="card-title">Voice Alerts</div>
+        <div class="voice-row">
+          <span class="voice-label">Enable Voice</span>
+          <label class="toggle">
+            <input type="checkbox" id="voiceOn" checked/>
+            <div class="toggle-track"></div>
+            <div class="toggle-thumb"></div>
+          </label>
+        </div>
+        <div class="slider-wrap" style="margin-top:0">
+          <div class="slider-top">
+            <span>Speech Rate</span>
+            <span id="rateVal">1.0</span>
+          </div>
+          <input type="range" id="rateSlider" min="0.5" max="1.8" step="0.1" value="1.0"
+            oninput="document.getElementById('rateVal').textContent = parseFloat(this.value).toFixed(1)"/>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+</div>
+
+<script>
+// ── STATE ──────────────────────────────────────────────
+let state = {};
+let running = true;
+
+function initState() {
+  state = {
+    hr: parseFloat(document.getElementById('baseHR').value) || 70,
+    blood_pooling: 0.0,
+    stress: parseFloat(document.getElementById('initStress').value) || 0.2,
+    spike_time: 0,
+    stand_event: 0,
+    tick: 0,
+    posture: 'Sitting'
+  };
+}
+initState();
+
+// ── POSTURE ────────────────────────────────────────────
+function setPosture(p) {
+  state.posture = p;
+  document.querySelectorAll('.p-btn').forEach(b =>
+    b.classList.toggle('active', b.dataset.p === p));
+}
+
+// ── EVENTS ─────────────────────────────────────────────
+function triggerStand() {
+  state.stand_event = 5;
+  const btn = document.querySelector('.btn-spike');
+  btn.style.background = 'rgba(248,113,113,0.18)';
+  setTimeout(() => btn.style.background = '', 500);
+}
+
+function resetSim() {
+  initState();
+  hrHistory = [];
+  ecgData = [];
+  ecgPhase = 0;
+  lastLevel = '';
+  lastSpokenTime = 0;
+}
+
+function toggleSim() {
+  running = !running;
+  const btn = document.getElementById('btnRun');
+  btn.textContent = running ? '⏸ Pause' : '▶ Resume';
+  btn.classList.toggle('on', running);
+  document.getElementById('liveDot').classList.toggle('paused', !running);
+}
+
+// ── PHYSICS ────────────────────────────────────────────
+let hrHistory = [];
+
+function tick() {
+  if (!running) return;
+  state.tick++;
+
+  if (state.stand_event > 0) {
+    state.stand_event--;
+    state.blood_pooling += parseFloat(document.getElementById('poolRate').value) || 0.12;
+  }
+
+  state.blood_pooling *= 0.985;
+
+  const postureMap = { Lying: -0.3, Sitting: 0.0, Standing: 1.0, Walking: 1.2 };
+  const posture_load = postureMap[state.posture] ?? 0;
+
+  state.stress += state.blood_pooling * 0.04;
+  state.stress *= 0.99;
+  const stress = Math.max(0, Math.min(1, state.stress));
+
+  const movement  = parseFloat(document.getElementById('movSlider').value);
+  const baseHR    = parseFloat(document.getElementById('baseHR').value) || 70;
+  const mov_load  = movement * 15;
+  const pool_eff  = state.blood_pooling * 40;
+  const post_eff  = posture_load * 18;
+  const target_hr = baseHR + mov_load + pool_eff + post_eff;
+
+  state.hr += (target_hr - state.hr) * 0.09;
+  state.hr += (Math.random() - 0.5) * 1.2;
+
+  const hrv      = Math.max(15, 85 - stress * 60 - state.blood_pooling * 45);
+  const hr_delta = state.hr - baseHR;
+  const mismatch = hr_delta - mov_load * 0.6;
+  const pots     = mismatch + state.blood_pooling * 25 + stress * 15;
+  const syncope  = state.blood_pooling * 45 + stress * 35;
+
+  if (pots > 25 && ['Standing', 'Walking'].includes(state.posture)) {
+    state.spike_time++;
+  } else {
+    state.spike_time = Math.max(0, state.spike_time - 1);
+  }
+
+  hrHistory.push(state.hr);
+  if (hrHistory.length > 80) hrHistory.shift();
+
+  updateUI({ hr: state.hr, hr_delta, hrv, pots, syncope, stress });
+  handleVoice({ pots, syncope });
+}
+
+// ── UI ─────────────────────────────────────────────────
+function updateUI({ hr, hr_delta, hrv, pots, syncope, stress }) {
+  const f = (v, d=1) => isNaN(v) ? '--' : v.toFixed(d);
+
+  document.getElementById('bpmDisplay').innerHTML = `${f(hr, 0)}<span>BPM</span>`;
+
+  sm('mHR',    f(hr, 0),                 'cHR',    hr > 100 ? 'danger' : hr > 90 ? 'warn' : 'ok');
+  sm('mHRV',   f(hrv, 1),                'cHRV',   hrv < 30 ? 'danger' : hrv < 50 ? 'warn' : 'ok');
+  sm('mPool',  f(state.blood_pooling, 3),'cPool',  state.blood_pooling > 0.4 ? 'danger' : state.blood_pooling > 0.2 ? 'warn' : '');
+  sm('mStress',f(stress, 2),             'cStress',stress > 0.7 ? 'danger' : stress > 0.4 ? 'warn' : '');
+  sm('mPOTS',  f(pots, 1),               'cPOTS',  pots > 35 ? 'danger' : pots > 25 ? 'warn' : '');
+  sm('mSync',  f(syncope, 1),            'cSync',  syncope > 60 ? 'danger' : syncope > 35 ? 'warn' : '');
+  sm('mSpike', `${state.spike_time}`,    'cSpike', state.spike_time > 10 ? 'danger' : state.spike_time > 5 ? 'warn' : '');
+  sm('mDelta', (hr_delta >= 0 ? '+' : '') + f(hr_delta, 1), 'cDelta', hr_delta > 30 ? 'danger' : hr_delta > 15 ? 'warn' : '');
+
+  const level = getLevel(pots, syncope);
+
+  const bannerMap = {
+    stable:   ['stable',   '💚', 'Stable physiology — all parameters within normal range.'],
+    mild:     ['mild',     '🩷', 'Mild POTS response detected — slight autonomic mismatch.'],
+    moderate: ['moderate', '⚠️', 'Moderate response — sustained tachycardia. Please rest.'],
+    severe:   ['severe',   '🆘', 'Severe — high syncope risk or prolonged spike. Lie down now.'],
+  };
+
+  const [cls, icon, txt] = bannerMap[level];
+  const banner = document.getElementById('alertBanner');
+  banner.className = 'alert-banner ' + cls;
+  banner.querySelector('.alert-icon').textContent = icon;
+  document.getElementById('alertText').textContent = txt;
+
+  ['Stable', 'Mild', 'Moderate', 'Severe'].forEach(l =>
+    document.getElementById('cl' + l).classList.toggle('active', l.toLowerCase() === level));
+}
+
+function sm(valId, val, cardId, lvl) {
+  document.getElementById(valId).textContent = val;
+  const c = document.getElementById(cardId);
+  c.className = 'metric' + (lvl ? ' ' + lvl : '');
+}
+
+function getLevel(pots, syncope) {
+  if (syncope > 60 || state.spike_time > 10) return 'severe';
+  if (pots > 35  || syncope > 35)            return 'moderate';
+  if (pots > 25)                             return 'mild';
+  return 'stable';
+}
+
+// ── VOICE ──────────────────────────────────────────────
+const synth = window.speechSynthesis;
+let lastLevel = '';
+let lastSpokenTime = 0;
+
+const MESSAGES = {
+  mild: [
+    "Hey, your heart rate has picked up a little. Try to sit down slowly and take a long, slow breath in. You're okay.",
+    "Feeling a little off? Your heart rate is slightly elevated. Find somewhere to sit, breathe gently, and give yourself a moment.",
+  ],
+  moderate: [
+    "Your heart rate has been elevated for a while now. Please sit or lie down right away. Breathe slowly — in for 4 counts, out for 4. You're going to be okay, just rest.",
+    "This looks like a POTS flare. Please lie down now and try to elevate your legs if you can. Breathe slowly and stay as still as possible. You're safe.",
+  ],
+  severe: [
+    "This is a serious spike. Please lie down flat immediately. Do not try to stand. Call someone you trust or emergency services if you feel faint, nauseous, or cannot stay conscious.",
+    "Critical alert — prolonged spike detected. Lie flat right now. Do not stand up. If you are alone, please call for help. Stay calm and breathe slowly until help arrives.",
+  ],
+  stable_recovery: [
+    "Your readings are looking much better now. You're doing great — just keep resting and breathing slowly.",
+    "Parameters are back to normal. Well done for taking care of yourself. Keep resting a little longer.",
+  ]
+};
+
+function speak(text) {
+  if (!document.getElementById('voiceOn').checked) return;
+  const now = Date.now();
+  if (now - lastSpokenTime < 7000) return;
+  lastSpokenTime = now;
+  synth.cancel();
+  const utt = new SpeechSynthesisUtterance(text);
+  utt.rate   = parseFloat(document.getElementById('rateSlider').value);
+  utt.pitch  = 1.0;
+  utt.volume = 1.0;
+  const bars = document.querySelectorAll('.vb');
+  bars.forEach(b => b.classList.add('active'));
+  utt.onend = () => bars.forEach(b => b.classList.remove('active'));
+  synth.speak(utt);
+}
+
+function pick(arr) { return arr[Math.floor(Math.random() * arr.length)]; }
+
+function handleVoice({ pots, syncope }) {
+  const level = getLevel(pots, syncope);
+  if (level === lastLevel) return;
+
+  if (level === 'stable' && lastLevel !== '' && lastLevel !== 'stable') {
+    speak(pick(MESSAGES.stable_recovery));
+  } else if (level !== 'stable') {
+    speak(pick(MESSAGES[level]));
+  }
+
+  lastLevel = level;
+}
+
+// ── ECG ────────────────────────────────────────────────
+let ecgData = [];
+let ecgPhase = 0;
+
+function pushECG() {
+  if (!running) return;
+  const hr = state.hr || 70;
+  const spb = Math.round((60 / hr) * 60);
+  ecgPhase = (ecgPhase + 1) % spb;
+  const t = ecgPhase / spb;
+
+  let v = 0;
+  if      (t < 0.10) v =  0.10 * Math.sin(Math.PI * t / 0.10);
+  else if (t < 0.15) v =  0;
+  else if (t < 0.17) v = -0.15;
+  else if (t < 0.20) v =  1.0;
+  else if (t < 0.23) v = -0.20;
+  else if (t < 0.35) v =  0.01;
+  else if (t < 0.55) v =  0.20 * Math.sin(Math.PI * (t - 0.35) / 0.20);
+  v += (Math.random() - 0.5) * 0.018;
+
+  ecgData.push(v);
+  if (ecgData.length > 300) ecgData.shift();
+}
+
+function drawECG() {
+  const canvas = document.getElementById('ecg');
+  const W = canvas.offsetWidth, H = canvas.offsetHeight;
+  canvas.width = W; canvas.height = H;
+  const ctx = canvas.getContext('2d');
+  ctx.clearRect(0, 0, W, H);
+
+  ctx.strokeStyle = 'rgba(244,114,182,0.06)';
+  ctx.lineWidth = 0.5;
+  for (let x = 0; x < W; x += 20) { ctx.beginPath(); ctx.moveTo(x,0); ctx.lineTo(x,H); ctx.stroke(); }
+  for (let y = 0; y < H; y += 20) { ctx.beginPath(); ctx.moveTo(0,y); ctx.lineTo(W,y); ctx.stroke(); }
+
+  if (ecgData.length < 2) return;
+
+  const mid = H / 2, scale = H * 0.38;
+  const step = W / (ecgData.length - 1);
+
+  ctx.shadowBlur = 7;
+  ctx.shadowColor = 'rgba(244,114,182,0.5)';
+  ctx.strokeStyle = '#f472b6';
+  ctx.lineWidth = 1.8;
+  ctx.beginPath();
+  ecgData.forEach((v, i) => {
+    const x = i * step, y = mid - v * scale;
+    i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+  });
+  ctx.stroke();
+  ctx.shadowBlur = 0;
+}
+
+// ── CLOCK ──────────────────────────────────────────────
+function updateClock() {
+  document.getElementById('clockEl').textContent =
+    new Date().toTimeString().split(' ')[0];
+}
+
+// ── LOOPS ──────────────────────────────────────────────
+setInterval(() => { tick(); updateClock(); }, 1000);
+setInterval(() => { pushECG(); drawECG(); }, 16);
+updateClock();
+</script>
+</body>
+</html>
